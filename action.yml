@@ -93,13 +93,13 @@ runs:
 
         curl -f -L -o "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" 'https://github.com/careem/dependency-diff-tldr/releases/download/v0.0.6/dependency-diff-tldr-r8.jar'
 
-        if [[ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(shasum "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | awk '{print $1}')" ]]; then
+        if [[ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(cat "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | openssl sha1 | awk '{print $2}')" ]]; then
           raise_error "Incorrect checksum for dependency-diff-tldr-r8.jar."
         fi
 
         curl -f -L -o "$WORK_DIR/tools/dependency-tree-diff.jar" 'https://github.com/JakeWharton/dependency-tree-diff/releases/download/1.2.0/dependency-tree-diff.jar'
 
-        if [[ '949394274f37c06ac695b5d49860513e4d16e847' != "$(shasum "$WORK_DIR/tools/dependency-tree-diff.jar" | awk '{print $1}')" ]]; then
+        if [[ '949394274f37c06ac695b5d49860513e4d16e847' != "$(cat "$WORK_DIR/tools/dependency-tree-diff.jar" | openssl sha1 | awk '{print $2}')" ]]; then
           raise_error "Incorrect checksum for dependency-tree-diff.jar."
         fi
 
@@ -130,7 +130,8 @@ runs:
         cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
 
         for i in "${!modules[@]}" ; do
-          ./gradlew ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" > "$WORK_DIR/deps/${modules[$i]}-before-deps.txt"
+          # on windows, files containing CR cause an error in diff tools
+          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-before-deps.txt"
         done
 
         cd "$WORK_DIR/sources"
@@ -144,7 +145,8 @@ runs:
         cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
 
         for i in "${!modules[@]}" ; do
-          ./gradlew ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" > "$WORK_DIR/deps/${modules[$i]}-after-deps.txt"
+          # on windows, files containing CR cause an error in diff tools
+          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-after-deps.txt"
         done
 
         echo "### $REPORT_TITLE" >> $GITHUB_STEP_SUMMARY

@@ -11,9 +11,7 @@ jobs:
     name: Use this action for check
     strategy:
       matrix:
-        # TODO: Support Windows runner
-        # runner: [ubuntu-latest, macos-latest, windows-latest]
-        runner: [ubuntu-latest, macos-latest]
+        runner: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
     permissions:
       contents: read
