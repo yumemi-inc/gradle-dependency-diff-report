@@ -1,6 +1,6 @@
 [![CI](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/workflows/ci.yml/badge.svg)](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/workflows/ci.yml)
 
-# [BETA] Gradle Dependency Diff Report
+# Gradle Dependency Diff Report
 
 A GitHub Action that reports Gradle dependency differences.
 The report is displayed in the pull request job summary, like [this](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/runs/6220601823).
@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: yumemi-inc/gradle-dependency-diff-report@main
+      - uses: yumemi-inc/gradle-dependency-diff-report@v1
         with:
           modules: 'app'
           configuration: 'releaseRuntimeClasspath'
@@ -37,7 +37,7 @@ If you specify only the root module of the application, the modules that root de
 But if there is no root module or if you need to report on individual modules, specify them separated by spaces.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app feature:main feature:login domain'
     configuration: 'releaseRuntimeClasspath'
@@ -46,7 +46,7 @@ But if there is no root module or if you need to report on individual modules, s
 At this time, if you want to apply a different configuration, specify it separated by `|`.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app|productReleaseRuntimeClasspath feature:main feature:login domain|debugRuntimeClasspath'
     configuration: 'releaseRuntimeClasspath'
@@ -63,7 +63,7 @@ If you want to use a different version, specify it using [actions/setup-java](ht
   with:
     distribution: 'zulu'
     java-version: 17
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -74,7 +74,7 @@ By default, the latest code in the base branch of a pull request is considered.
 To report dependency differences only in pull requests without considering the base branch, set `compare-with-base` input to `false`.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -87,7 +87,7 @@ Note that `pull-requests: read` permission is required in this case.
 If the repository root directory and application root directory do not match, specify it with `project-dir` input.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -113,7 +113,7 @@ on:
 Use the `exists-diff` output of this action to notify the pull request with a comment if there are any differences in dependencies.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   id: report
   with:
     modules: 'app'
@@ -131,7 +131,7 @@ This action uses Gradle `dependencies` task, so you can expect faster processing
 
 ```yaml
 - uses: gradle/gradle-build-action@v2
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -171,7 +171,7 @@ jobs:
     outputs:
       exists-diff: ${{ steps.report.outputs.exists-diff }}
     steps:
-      - uses: yumemi-inc/gradle-dependency-diff-report@main
+      - uses: yumemi-inc/gradle-dependency-diff-report@v1
         id: report
         with:
           modules: 'app domain'
@@ -183,7 +183,7 @@ jobs:
     outputs:
       exists-diff: ${{ steps.report.outputs.exists-diff }}
     steps:
-      - uses: yumemi-inc/gradle-dependency-diff-report@main
+      - uses: yumemi-inc/gradle-dependency-diff-report@v1
         id: report
         with:
           modules: 'feature:main feature:login'
@@ -205,7 +205,7 @@ jobs:
 If you want to pass some environment variables when running your application's `dependencies` task, specify them with `env`.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -219,7 +219,7 @@ If you want to pass some environment variables when running your application's `
 If you want to do some processing before your application's `dependencies` task, specify it with `script` input.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -231,7 +231,7 @@ If you want to do some processing before your application's `dependencies` task,
 At this time, environment variables and `${{ }}` expressions can be used.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@main
+- uses: yumemi-inc/gradle-dependency-diff-report@v1
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -274,7 +274,7 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
       - name: Report
-        uses: yumemi-inc/gradle-dependency-diff-report@main
+        uses: yumemi-inc/gradle-dependency-diff-report@v1
         id: report
         with:
           modules: 'app'
