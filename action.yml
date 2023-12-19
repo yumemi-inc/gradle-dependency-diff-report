@@ -174,7 +174,7 @@ runs:
             if [ -n "$result" ]; then
               exists=true
 
-              echo ":orange_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ":yellow_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
               echo ''
               echo '```'
               echo "$result"
