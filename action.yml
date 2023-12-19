@@ -165,6 +165,9 @@ runs:
 
         {
           echo "### $REPORT_TITLE"
+          echo ''
+          echo "- head ref: [${HEAD_REF}](https://github.com/${GH_REPO}/commit/${head_sha})"
+          echo "- base ref: [${BASE_REF}](https://github.com/${GH_REPO}/commit/${base_sha})"
 
           for i in "${!modules[@]}" ; do
             result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" "$WORK_DIR/deps/${modules[$i]}-base.txt" "$WORK_DIR/deps/${modules[$i]}-head.txt")"
@@ -174,7 +177,7 @@ runs:
             if [ -n "$result" ]; then
               exists=true
 
-              echo ":yellow_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ":yellow_square: \`${modules[$i]}\` module (\`${configurations[$i]}\` configuration)"
               echo ''
               echo '```'
               echo "$result"
