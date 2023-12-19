@@ -15,29 +15,39 @@ inputs:
     description: 'Root directory of the target application under the repository.'
     required: false
     default: '.'
+  script:
+    description: 'Bash script to run before Gradle dependencies task.'
+    required: false
   report-title:
     description: 'Report title in job summary.'
     required: false
     default: 'Report from Gradle Dependency Diff Report action'
-  compare-with-base:
-    description: 'Whether to compare with the base branch.'
-    required: false
-    default: 'true'
-  script:
-    description: 'Bash script to run before Gradle dependencies task.'
-    required: false
-  repository: # opned for .github/workflows/ci.yml
-    description: ''
-    required: false
-    default: ${{ github.repository }}
-  sha: # opend for .github/workflows/ci.yml
-    description: ''
+  head-ref:
+    description: 'Current branch, tag, or commit SHA to compare with base.'
     required: false
     default: ${{ github.sha }}
+  base-ref:
+    description: 'Branch, tag, or commit SHA as a basis for comparison.'
+    required: false
+    default: |-
+      ${{
+        (github.event_name == 'pull_request' && github.base_ref) ||
+        (github.event_name == 'push' && (startsWith(github.event.before, '0000') && github.event.repository.default_branch || github.event.before)) ||
+        (github.event_name == 'merge_group' && github.event.merge_group.base_sha) ||
+        github.event.repository.default_branch
+      }}
+  use-merge-base:
+    description: 'Whether to compare with the latest common commit.'
+    required: false
+    default: 'false'
+  repository: # opned for .github/workflows/ci.yml
+    description: 'Target repository.'
+    required: false
+    default: ${{ github.repository }}
 outputs:
   exists-diff:
     description: 'Whether there are any differences in dependencies.'
-    value: ${{ steps.report.outputs.exists-diff || 'false' }}
+    value: ${{ steps.report.outputs.exists-diff }}
 runs:
   using: 'composite'
   steps:
@@ -48,24 +58,22 @@ runs:
         MODULES: ${{ inputs.modules }}
         CONFIGURATION: ${{ inputs.configuration }}
         PROJECT_DIR: ${{ inputs.project-dir }}
-        REPORT_TITLE: ${{ inputs.report-title }}
-        COMPARE_WITH_BASE: ${{ inputs.compare-with-base }}
         SCRIPT: ${{ inputs.script }}
-        REPOSITORY: ${{ inputs.repository }}
-        SHA: ${{ inputs.sha }}
-        MERGE_REF: ${{ github.ref }}
-        EVENT_NAME: ${{ github.event_name }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        GH_TOKEN: ${{ github.token }}
+        REPORT_TITLE: ${{ inputs.report-title }}
+        HEAD_REF: ${{ inputs.head-ref }}
+        BASE_REF: ${{ inputs.base-ref }}
+        USE_MERGE_BASE: ${{ inputs.use-merge-base }}
+        GH_REPO: ${{ inputs.repository }} # for GitHub CLI
+        GH_TOKEN: ${{ github.token }} # for GitHub CLI
       run: |
-        function raise_error() {
-          echo "::error::$1"
-          return 1
-        }
+        echo "::debug::git version: $(git --version)"
+        echo "::debug::gh version: $(gh --version | tr '\n' ' ')"
+        echo "::debug::jq version: $(jq --version)"
+        source "$GITHUB_ACTION_PATH/raise_error.sh"
 
-        if [[ "$EVENT_NAME" != 'pull_request' && "$EVENT_NAME" != 'push' ]]; then raise_error "This action must be triggered by a 'pull_request' or 'push' event."; fi
+        readonly WORK_DIR="$GITHUB_ACTION_PATH"
 
-        if [[ -z "$MODULES" ]]; then raise_error "Specify 'modules' input."; fi
+        if [ -z "$MODULES" ]; then raise_error "Specify 'modules' input."; fi
 
         modules=()
         configurations=()
@@ -84,54 +92,58 @@ runs:
           configurations+=($configuration)
         done
 
-        cd "$GITHUB_ACTION_PATH"
+        # reuse in the same job
+        if [ ! -d "$WORK_DIR/tools" ]; then
+          mkdir "$WORK_DIR/tools"
 
-        readonly WORK_DIR="$(pwd)"
+          # get dependency-diff-tldr
+          curl -f -L -o "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" 'https://github.com/careem/dependency-diff-tldr/releases/download/v0.0.6/dependency-diff-tldr-r8.jar'
+          if [ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(cat "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | openssl sha1 | awk '{print $2}')" ]; then
+            raise_error "Incorrect checksum for dependency-diff-tldr-r8.jar."
+          fi
 
-        mkdir tools
-        mkdir deps
-
-        curl -f -L -o "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" 'https://github.com/careem/dependency-diff-tldr/releases/download/v0.0.6/dependency-diff-tldr-r8.jar'
-
-        if [[ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(cat "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | openssl sha1 | awk '{print $2}')" ]]; then
-          raise_error "Incorrect checksum for dependency-diff-tldr-r8.jar."
+          # get Dependency Tree Diff
+          curl -f -L -o "$WORK_DIR/tools/dependency-tree-diff.jar" 'https://github.com/JakeWharton/dependency-tree-diff/releases/download/1.2.0/dependency-tree-diff.jar'
+          if [ '949394274f37c06ac695b5d49860513e4d16e847' != "$(cat "$WORK_DIR/tools/dependency-tree-diff.jar" | openssl sha1 | awk '{print $2}')" ]; then
+            raise_error "Incorrect checksum for dependency-tree-diff.jar."
+          fi
         fi
 
-        curl -f -L -o "$WORK_DIR/tools/dependency-tree-diff.jar" 'https://github.com/JakeWharton/dependency-tree-diff/releases/download/1.2.0/dependency-tree-diff.jar'
-
-        if [[ '949394274f37c06ac695b5d49860513e4d16e847' != "$(cat "$WORK_DIR/tools/dependency-tree-diff.jar" | openssl sha1 | awk '{print $2}')" ]]; then
-          raise_error "Incorrect checksum for dependency-tree-diff.jar."
-        fi
-
-        gh repo clone "$REPOSITORY" sources > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
-        cd ./sources
-
-        # enable fetch
-        # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
-        GITHUB_AUTH="$(echo -n "x-access-token:$GH_TOKEN" | base64)"
-        git config http.https://github.com/.extraheader "AUTHORIZATION: basic $GITHUB_AUTH"
-
-        if [[ "$EVENT_NAME" == 'push' ]]; then
-          after_sha="$SHA"
-          before_sha="$(git rev-parse "${after_sha}~1")"
-        elif [[ "$COMPARE_WITH_BASE" == 'false' ]]; then
-          last_commit="$(gh pr view "$PR_NUMBER" --json commits --jq '.commits|reverse|.[0].oid')" > /dev/null 2>&1 || raise_error "May not have 'pull-requests: read' permission."
-          after_sha="$last_commit"
-          first_commit="$(gh pr view "$PR_NUMBER" --json commits --jq '.commits|.[0].oid')"
-          before_sha="$(git rev-parse "${first_commit}~1")"
+        if [ ! -d "$WORK_DIR/deps" ]; then
+          mkdir "$WORK_DIR/deps"
         else
-          git fetch -q origin "$MERGE_REF:merge"
-          after_sha="$(git rev-parse merge)"
-          before_sha="$(git rev-parse "${after_sha}~1")"
+          rm "$WORK_DIR/deps/"*
         fi
 
-        git checkout -q "$before_sha"
+        if [[ -z "$HEAD_REF" || -z "$BASE_REF" ]]; then raise_error "Specify 'head-ref' and 'base-ref' inputs."; fi
+
+        if [ ! -d "$WORK_DIR/sources" ]; then
+          gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --depth 1 --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
+          # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
+          cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
+        else
+          cd "$WORK_DIR/sources"
+        fi
+
+        git fetch -q --depth 1 origin "$HEAD_REF" > /dev/null 2>&1 || raise_error "'head-ref' input is not valid."
+        head_sha="$(git rev-parse FETCH_HEAD)"
+
+        git fetch -q --depth 1 origin "$BASE_REF" > /dev/null 2>&1 || raise_error "'base-ref' input is not valid."
+        base_sha="$(git rev-parse FETCH_HEAD)"
+
+        if [ "$USE_MERGE_BASE" == 'true' ]; then
+          merge_base_sha="$(gh api "repos/{owner}/{repo}/compare/${base_sha}...${head_sha}" | jq -r '.merge_base_commit.sha')"
+          git fetch -q --depth 1 origin "$merge_base_sha"
+          base_sha="$(git rev-parse FETCH_HEAD)"
+        fi
+
+        git checkout -q "$head_sha"
         eval "$SCRIPT"
-        cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
+        cd "$WORK_DIR/sources/$PROJECT_DIR"
 
         for i in "${!modules[@]}" ; do
           # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-before-deps.txt"
+          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-head.txt"
         done
 
         cd "$WORK_DIR/sources"
@@ -140,47 +152,50 @@ runs:
         git clean -df -q
         git checkout -q .
 
-        git checkout -q "$after_sha"
+        git checkout -q "$base_sha"
         eval "$SCRIPT"
-        cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
+        cd "$WORK_DIR/sources/$PROJECT_DIR"
 
         for i in "${!modules[@]}" ; do
           # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-after-deps.txt"
+          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-base.txt"
         done
 
-        echo "### $REPORT_TITLE" >> $GITHUB_STEP_SUMMARY
-        echo '' >> $GITHUB_STEP_SUMMARY
-        echo "- commit SHA before change: [${before_sha}](https://github.com/${REPOSITORY}/commit/${before_sha})" >> $GITHUB_STEP_SUMMARY
-        echo "- commit SHA after change: [${after_sha}](https://github.com/${REPOSITORY}/commit/${after_sha})" >> $GITHUB_STEP_SUMMARY
+        exists=false
 
-        for i in "${!modules[@]}" ; do
-          result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" "$WORK_DIR/deps/${modules[$i]}-before-deps.txt" "$WORK_DIR/deps/${modules[$i]}-after-deps.txt")"
+        {
+          echo "### $REPORT_TITLE"
 
-          echo '' >> $GITHUB_STEP_SUMMARY
+          for i in "${!modules[@]}" ; do
+            result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" "$WORK_DIR/deps/${modules[$i]}-base.txt" "$WORK_DIR/deps/${modules[$i]}-head.txt")"
 
-          if [[ -n "$result" ]]; then
-            echo ":orange_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )" >> $GITHUB_STEP_SUMMARY
-            echo '' >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "$result" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo ''
 
-            result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" "$WORK_DIR/deps/${modules[$i]}-before-deps.txt" "$WORK_DIR/deps/${modules[$i]}-after-deps.txt")"
+            if [ -n "$result" ]; then
+              exists=true
 
-            echo '' >> $GITHUB_STEP_SUMMARY
-            echo '<details>' >> $GITHUB_STEP_SUMMARY
-            echo '<summary>detail</summary>' >> $GITHUB_STEP_SUMMARY
-            echo '' >> $GITHUB_STEP_SUMMARY
-            echo '```diff' >> $GITHUB_STEP_SUMMARY
-            echo "$result_detail" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo '</details>' >> $GITHUB_STEP_SUMMARY
+              echo ":orange_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ''
+              echo '```'
+              echo "$result"
+              echo '```'
 
-            echo 'exists-diff=true' >> $GITHUB_OUTPUT
-          else
-            echo ":green_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )" >> $GITHUB_STEP_SUMMARY
-            echo '' >> $GITHUB_STEP_SUMMARY
-            echo 'No differences in dependencies, when this module is the base point.' >> $GITHUB_STEP_SUMMARY
-          fi
-        done
+              result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" "$WORK_DIR/deps/${modules[$i]}-base.txt" "$WORK_DIR/deps/${modules[$i]}-head.txt")"
+
+              echo ''
+              echo '<details>'
+              echo '<summary>detail</summary>'
+              echo ''
+              echo '```diff'
+              echo "$result_detail"
+              echo '```'
+              echo '</details>'
+            else
+              echo ":green_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ''
+              echo 'No differences in dependencies, when this module is the base point.'
+            fi
+          done
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        echo "exists-diff=$exists" >> "$GITHUB_OUTPUT"
