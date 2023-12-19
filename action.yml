@@ -70,26 +70,27 @@ runs:
         echo "::debug::gh version: $(gh --version | tr '\n' ' ')"
         echo "::debug::jq version: $(jq --version)"
         source "$GITHUB_ACTION_PATH/raise_error.sh"
+        source "$GITHUB_ACTION_PATH/create_file_name.sh"
 
         readonly WORK_DIR="$GITHUB_ACTION_PATH"
 
         if [ -z "$MODULES" ]; then raise_error "Specify 'modules' input."; fi
 
-        modules=()
-        configurations=()
+        mods=()
+        confs=()
 
-        for module in $MODULES ; do
-          configuration="$CONFIGURATION"
+        for mod in $MODULES ; do
+          conf="$CONFIGURATION"
 
-          if [[ "$module" =~ '|' ]]; then
-            configuration=${module#*|}
-            module=${module%%|*}
+          if [[ "$mod" =~ '|' ]]; then
+            conf=${mod#*|}
+            mod=${mod%%|*}
           fi
 
-          if [[ -z "$module" || -z "$configuration" ]]; then raise_error "Incorrect 'modules' or 'configuration' input."; fi
+          if [[ -z "$mod" || -z "$conf" ]]; then raise_error "Incorrect 'modules' or 'configuration' input."; fi
 
-          modules+=($module)
-          configurations+=($configuration)
+          mods+=($mod)
+          confs+=($conf)
         done
 
         # reuse in the same job
@@ -109,11 +110,7 @@ runs:
           fi
         fi
 
-        if [ ! -d "$WORK_DIR/deps" ]; then
-          mkdir "$WORK_DIR/deps"
-        else
-          rm "$WORK_DIR/deps/"*
-        fi
+        if [ ! -d "$WORK_DIR/deps" ]; then mkdir "$WORK_DIR/deps"; fi
 
         if [[ -z "$HEAD_REF" || -z "$BASE_REF" ]]; then raise_error "Specify 'head-ref' and 'base-ref' inputs."; fi
 
@@ -141,9 +138,9 @@ runs:
         eval "$SCRIPT"
         cd "$WORK_DIR/sources/$PROJECT_DIR"
 
-        for i in "${!modules[@]}" ; do
+        for i in "${!mods[@]}" ; do
           # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-head.txt"
+          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$WORK_DIR/deps/$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")"
         done
 
         cd "$WORK_DIR/sources"
@@ -156,9 +153,9 @@ runs:
         eval "$SCRIPT"
         cd "$WORK_DIR/sources/$PROJECT_DIR"
 
-        for i in "${!modules[@]}" ; do
+        for i in "${!mods[@]}" ; do
           # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-base.txt"
+          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$WORK_DIR/deps/$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")"
         done
 
         exists=false
@@ -169,21 +166,23 @@ runs:
           echo "- head ref: [${HEAD_REF}](https://github.com/${GH_REPO}/commit/${head_sha})"
           echo "- base ref: [${BASE_REF}](https://github.com/${GH_REPO}/commit/${base_sha})"
 
-          for i in "${!modules[@]}" ; do
-            result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" "$WORK_DIR/deps/${modules[$i]}-base.txt" "$WORK_DIR/deps/${modules[$i]}-head.txt")"
+          for i in "${!mods[@]}" ; do
+            result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" \
+              "$WORK_DIR/deps/$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")" "$WORK_DIR/deps/$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")")"
 
             echo ''
 
             if [ -n "$result" ]; then
               exists=true
 
-              echo ":yellow_square: \`${modules[$i]}\` module (\`${configurations[$i]}\` configuration)"
+              echo ":yellow_square: \`${mods[$i]}\` module (\`${confs[$i]}\` configuration)"
               echo ''
               echo '```'
               echo "$result"
               echo '```'
 
-              result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" "$WORK_DIR/deps/${modules[$i]}-base.txt" "$WORK_DIR/deps/${modules[$i]}-head.txt")"
+              result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" \
+                "$WORK_DIR/deps/$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")" "$WORK_DIR/deps/$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")")"
 
               echo ''
               echo '<details>'
@@ -194,7 +193,7 @@ runs:
               echo '```'
               echo '</details>'
             else
-              echo ":green_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ":green_square: \`${mods[$i]}\` module (\`${confs[$i]}\` configuration)"
               echo ''
               echo 'No differences in dependencies, when this module is the base point.'
             fi
