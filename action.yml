@@ -69,27 +69,33 @@ runs:
 
         if [[ "$EVENT_NAME" != 'pull_request' && "$EVENT_NAME" != 'push' ]]; then raise_error "This action must be triggered by a 'pull_request' or 'push' event."; fi
 
-        if [[ -z "$MODULES" ]]; then raise_error "Specify 'modules' input."; fi
+        modules="$(echo "$MODULES" | xargs)"
+        configuration="$(echo "$CONFIGURATION" | xargs)"
 
-        for module in $MODULES ; do
-          configuration="$CONFIGURATION"
+        if [ -z "$modules" ]; then raise_error "Specify 'modules' input."; fi
+        if [[ "$configuration" =~ ' ' ]]; then raise_error "'configuration' input is not valid."; fi
 
-          if [[ "$module" =~ '|' ]]; then
-            configuration=${module#*|}
-            module=${module%%|*}
+        set -o noglob
+        for mod in $modules ; do
+          conf=''
+          if [[ "$mod" =~ '|' ]]; then
+            conf="${mod#*|}"
+            mod="${mod%%|*}"
           fi
-
-          if [[ -z "$module" || -z "$configuration" ]]; then raise_error "Incorrect 'modules' or 'configuration' input."; fi
-
-          modules+=($module)
-          configurations+=($configuration)
+          if [ -z "$conf" ]; then conf="$configuration"; fi
+          if [ -z "$mod" ]; then raise_error "'modules' input is not valid."; fi
+          if [ -z "$conf" ]; then raise_error "Specify 'configuration' input."; fi
+          mods+=("$mod")
+          confs+=("$conf")
         done
 
+        # get dependency-diff-tldr
         curl -f -L -o "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" 'https://github.com/careem/dependency-diff-tldr/releases/download/v0.0.6/dependency-diff-tldr-r8.jar'
         if [ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(cat "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | openssl sha1 | awk '{print $2}')" ]; then
           raise_error "Incorrect checksum for dependency-diff-tldr-r8.jar."
         fi
 
+        # get Dependency Tree Diff
         curl -f -L -o "$WORK_DIR/tools/dependency-tree-diff.jar" 'https://github.com/JakeWharton/dependency-tree-diff/releases/download/1.2.0/dependency-tree-diff.jar'
         if [ '949394274f37c06ac695b5d49860513e4d16e847' != "$(cat "$WORK_DIR/tools/dependency-tree-diff.jar" | openssl sha1 | awk '{print $2}')" ]; then
           raise_error "Incorrect checksum for dependency-tree-diff.jar."
@@ -117,13 +123,18 @@ runs:
           before_sha="$(git rev-parse "${after_sha}~1")"
         fi
 
+        # do not create a file with the input string
+        function create_file_name() {
+          echo -n "$WORK_DIR/deps/$(echo -n "${1}-${2}-${3}" | openssl sha1 | awk '{print $2}').txt"
+        }
+
         git checkout -q "$before_sha"
         eval "$SCRIPT"
         cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
 
-        for i in "${!modules[@]}" ; do
+        for i in "${!mods[@]}" ; do
           # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-before-deps.txt"
+          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$before_sha")"
         done
 
         cd "$WORK_DIR/sources"
@@ -136,8 +147,8 @@ runs:
         eval "$SCRIPT"
         cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
 
-        for i in "${!modules[@]}" ; do
-          ./gradlew -q ":${modules[$i]}:dependencies" --configuration "${configurations[$i]}" | tr -d '\r' > "$WORK_DIR/deps/${modules[$i]}-after-deps.txt"
+        for i in "${!mods[@]}" ; do
+          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$after_sha")"
         done
 
         exists=false
@@ -148,21 +159,23 @@ runs:
           echo "- head: [${after_sha:0:8}](https://github.com/${REPOSITORY}/commit/${after_sha})"
           echo "- base: [${before_sha:0:8}](https://github.com/${REPOSITORY}/commit/${before_sha})"
 
-          for i in "${!modules[@]}" ; do
-            result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" "$WORK_DIR/deps/${modules[$i]}-before-deps.txt" "$WORK_DIR/deps/${modules[$i]}-after-deps.txt")"
+          for i in "${!mods[@]}" ; do
+            result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" \
+              "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$before_sha")" "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$after_sha")")"
 
             echo ''
 
             if [ -n "$result" ]; then
               exists=true
 
-              echo ":yellow_square: \`${modules[$i]}\` module (\`${configurations[$i]}\` configuration)"
+              echo ":yellow_square: \`${mods[$i]}\` module (\`${confs[$i]}\` configuration)"
               echo ''
               echo '```'
               echo "$result"
               echo '```'
 
-              result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" "$WORK_DIR/deps/${modules[$i]}-before-deps.txt" "$WORK_DIR/deps/${modules[$i]}-after-deps.txt")"
+              result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" \
+                "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$before_sha")" "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$after_sha")")"
 
               echo ''
               echo '<details>'
@@ -173,7 +186,7 @@ runs:
               echo '```'
               echo '</details>'
             else
-              echo ":green_square: \`${modules[$i]}\` module (\`${configurations[$i]}\` configuration)"
+              echo ":green_square: \`${mods[$i]}\` module (\`${confs[$i]}\` configuration)"
               echo ''
               echo '```'
               echo 'No differences in dependencies, when this module is the base point.'
