@@ -96,6 +96,8 @@ runs:
           raise_error "Incorrect checksum for dependency-tree-diff.jar."
         fi
 
+        if [ -z "$HEAD_REF" ]; then raise_error "Specify 'head-ref' input."; fi
+
         gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --depth 1 --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
         # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
         cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
