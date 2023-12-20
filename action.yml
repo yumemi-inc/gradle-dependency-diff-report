@@ -111,27 +111,16 @@ runs:
           echo -n "$WORK_DIR/deps/$(echo -n "${1}-${2}-${3}" | openssl sha1 | awk '{print $2}').txt"
         }
 
-        git checkout -q "$base_sha"
-        eval "$SCRIPT"
-        cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
-
-        for i in "${!mods[@]}" ; do
-          # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")"
-        done
-
-        cd "$WORK_DIR/sources"
-
-        # cleanup
-        git clean -df -q
-        git checkout -q .
-
-        git checkout -q "$head_sha"
-        eval "$SCRIPT"
-        cd "$WORK_DIR/sources/$PROJECT_DIR"
-
-        for i in "${!mods[@]}" ; do
-          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")"
+        for sha in "$head_sha" "$base_sha" ; do
+          cd "$WORK_DIR/sources"
+          git checkout -q "$sha"
+          eval "$SCRIPT"
+          cd "$WORK_DIR/sources/$PROJECT_DIR"
+          for i in "${!mods[@]}" ; do
+            # on windows, files containing CR cause an error in diff tools
+            ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$sha")"
+          done
+          git clean -df -q; git checkout -q . # cleanup
         done
 
         exists=false
