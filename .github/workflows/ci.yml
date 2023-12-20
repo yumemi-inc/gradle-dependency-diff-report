@@ -35,11 +35,15 @@ jobs:
         id: report
         uses: ./
         with:
-          modules: 'app'
-          configuration: 'releaseRuntimeClasspath'
+          modules: |
+            app
+
+              app|debugRuntimeClasspath
+          configuration: |
+
+                releaseRuntimeClasspath
           repository: 'android/sunflower'
           head-ref: '8d000f6c72bc5384b4ca9f7452d620085919519d'
-          base-ref: '13144ae9b1cb7a725dc846179cd8498058bafad2'
       - name: Show result
         if: always()
         shell: bash # for windlows

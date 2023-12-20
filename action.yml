@@ -23,23 +23,9 @@ inputs:
     required: false
     default: 'Report from Gradle Dependency Diff Report action'
   head-ref:
-    description: 'Current branch, tag, or commit SHA to compare with base.'
+    description: 'Target commit reference.'
     required: false
     default: ${{ github.sha }}
-  base-ref:
-    description: 'Branch, tag, or commit SHA as a basis for comparison.'
-    required: false
-    default: |-
-      ${{
-        (github.event_name == 'pull_request' && github.base_ref) ||
-        (github.event_name == 'push' && (startsWith(github.event.before, '0000') && github.event.repository.default_branch || github.event.before)) ||
-        (github.event_name == 'merge_group' && github.event.merge_group.base_sha) ||
-        github.event.repository.default_branch
-      }}
-  use-merge-base:
-    description: 'Whether to compare with the latest common commit.'
-    required: false
-    default: 'false'
   repository: # opned for .github/workflows/ci.yml
     description: 'Target repository.'
     required: false
@@ -61,14 +47,12 @@ runs:
         SCRIPT: ${{ inputs.script }}
         REPORT_TITLE: ${{ inputs.report-title }}
         HEAD_REF: ${{ inputs.head-ref }}
-        BASE_REF: ${{ inputs.base-ref }}
-        USE_MERGE_BASE: ${{ inputs.use-merge-base }}
+        IS_VALID_EVENT: ${{ contains(fromJSON('["pull_request","pull_request_target","merge_group"]'), github.event_name) }}
         GH_REPO: ${{ inputs.repository }} # for GitHub CLI
         GH_TOKEN: ${{ github.token }} # for GitHub CLI
       run: |
         echo "::debug::git version: $(git --version)"
         echo "::debug::gh version: $(gh --version | tr '\n' ' ')"
-        echo "::debug::jq version: $(jq --version)"
         source "$GITHUB_ACTION_PATH/raise_error.sh"
 
         readonly WORK_DIR="$GITHUB_ACTION_PATH"
@@ -76,23 +60,28 @@ runs:
         mkdir "$WORK_DIR/tools"
         mkdir "$WORK_DIR/deps"
 
-        if [ -z "$MODULES" ]; then raise_error "Specify 'modules' input."; fi
+        if [ "$IS_VALID_EVENT" != 'true' ]; then raise_error "This action supports 'pull_request', 'pull_request_target' and 'merge_group' events."; fi
 
-        mods=()
-        confs=()
+        modules="$(echo "$MODULES" | xargs)"
+        configuration="$(echo "$CONFIGURATION" | xargs)"
 
-        for mod in $MODULES ; do
-          conf="$CONFIGURATION"
+        if [ -z "$modules" ]; then raise_error "Specify 'modules' input."; fi
+        if [[ "$configuration" =~ ' ' ]]; then raise_error "'configuration' input is not valid."; fi
 
+        set -o noglob
+        for mod in $modules ; do
+          conf=''
           if [[ "$mod" =~ '|' ]]; then
-            conf=${mod#*|}
-            mod=${mod%%|*}
+            conf="${mod#*|}"
+            mod="${mod%%|*}"
           fi
+          if [ -z "$conf" ]; then conf="$configuration"; fi
 
-          if [[ -z "$mod" || -z "$conf" ]]; then raise_error "Incorrect 'modules' or 'configuration' input."; fi
+          if [ -z "$mod" ]; then raise_error "'modules' input is not valid."; fi
+          if [ -z "$conf" ]; then raise_error "Specify 'configuration' input."; fi
 
-          mods+=($mod)
-          confs+=($conf)
+          mods+=("$mod")
+          confs+=("$conf")
         done
 
         # get dependency-diff-tldr
@@ -107,26 +96,18 @@ runs:
           raise_error "Incorrect checksum for dependency-tree-diff.jar."
         fi
 
-        if [[ -z "$HEAD_REF" || -z "$BASE_REF" ]]; then raise_error "Specify 'head-ref' and 'base-ref' inputs."; fi
+        if [ -z "$HEAD_REF" ]; then raise_error "Specify 'head-ref' input."; fi
 
         gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --depth 1 --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
         # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
         cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
 
-        git fetch -q --depth 1 origin "$HEAD_REF" > /dev/null 2>&1 || raise_error "'head-ref' input is not valid."
+        git fetch -q --depth 2 origin "$HEAD_REF" > /dev/null 2>&1 || raise_error "'head-ref' input is not valid."
         head_sha="$(git rev-parse FETCH_HEAD)"
+        base_sha="$(git rev-parse FETCH_HEAD~1)"
 
-        git fetch -q --depth 1 origin "$BASE_REF" > /dev/null 2>&1 || raise_error "'base-ref' input is not valid."
-        base_sha="$(git rev-parse FETCH_HEAD)"
-
-        if [ "$USE_MERGE_BASE" == 'true' ]; then
-          merge_base_sha="$(gh api "repos/{owner}/{repo}/compare/${base_sha}...${head_sha}" | jq -r '.merge_base_commit.sha')"
-          git fetch -q --depth 1 origin "$merge_base_sha"
-          base_sha="$(git rev-parse FETCH_HEAD)"
-        fi
-
+        # do not create a file with the input string
         function create_file_name() {
-          # do not create a file with the input string
           echo -n "$WORK_DIR/deps/$(echo -n "${1}-${2}-${3}" | openssl sha1 | awk '{print $2}').txt"
         }
 
@@ -150,7 +131,6 @@ runs:
         cd "$WORK_DIR/sources/$PROJECT_DIR"
 
         for i in "${!mods[@]}" ; do
-          # on windows, files containing CR cause an error in diff tools
           ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")"
         done
 
@@ -159,8 +139,8 @@ runs:
         {
           echo "### $REPORT_TITLE"
           echo ''
-          echo "- head ref: [${HEAD_REF}](https://github.com/${GH_REPO}/commit/${head_sha})"
-          echo "- base ref: [${BASE_REF}](https://github.com/${GH_REPO}/commit/${base_sha})"
+          echo "- head: [${head_sha:0:8}](https://github.com/${GH_REPO}/commit/${head_sha})"
+          echo "- base: [${base_sha:0:8}](https://github.com/${GH_REPO}/commit/${base_sha})"
 
           for i in "${!mods[@]}" ; do
             result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" \
@@ -191,9 +171,13 @@ runs:
             else
               echo ":green_square: \`${mods[$i]}\` module (\`${confs[$i]}\` configuration)"
               echo ''
+              echo '```'
               echo 'No differences in dependencies, when this module is the base point.'
+              echo '```'
             fi
           done
         } >> "$GITHUB_STEP_SUMMARY"
 
         echo "exists-diff=$exists" >> "$GITHUB_OUTPUT"
+
+        rm -fr "$WORK_DIR/tools"; rm -fr "$WORK_DIR/deps"; rm -fr "$WORK_DIR/sources"
