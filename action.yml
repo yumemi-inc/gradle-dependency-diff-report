@@ -15,6 +15,9 @@ inputs:
     description: 'Root directory of the target application under the repository.'
     required: false
     default: '.'
+  script:
+    description: 'Bash script to run before Gradle dependencies task.'
+    required: false
   report-title:
     description: 'Report title in job summary.'
     required: false
@@ -23,17 +26,14 @@ inputs:
     description: 'Whether to compare with the base branch.'
     required: false
     default: 'true'
-  script:
-    description: 'Bash script to run before Gradle dependencies task.'
+  sha:
+    description: ''
     required: false
+    default: ${{ github.sha }}
   repository: # opned for .github/workflows/ci.yml
     description: 'Target repository.'
     required: false
     default: ${{ github.repository }}
-  sha: # opend for .github/workflows/ci.yml
-    description: ''
-    required: false
-    default: ${{ github.sha }}
 outputs:
   exists-diff:
     description: 'Whether there are any differences in dependencies.'
@@ -48,15 +48,15 @@ runs:
         MODULES: ${{ inputs.modules }}
         CONFIGURATION: ${{ inputs.configuration }}
         PROJECT_DIR: ${{ inputs.project-dir }}
+        SCRIPT: ${{ inputs.script }}
         REPORT_TITLE: ${{ inputs.report-title }}
         COMPARE_WITH_BASE: ${{ inputs.compare-with-base }}
-        SCRIPT: ${{ inputs.script }}
-        REPOSITORY: ${{ inputs.repository }}
         SHA: ${{ inputs.sha }}
         MERGE_REF: ${{ github.ref }}
         EVENT_NAME: ${{ github.event_name }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ inputs.repository }} # for GitHub CLI
+        GH_TOKEN: ${{ github.token }} # for GitHub CLI
       run: |
         echo "::debug::git version: $(git --version)"
         echo "::debug::gh version: $(gh --version | tr '\n' ' ')"
@@ -83,8 +83,10 @@ runs:
             mod="${mod%%|*}"
           fi
           if [ -z "$conf" ]; then conf="$configuration"; fi
+
           if [ -z "$mod" ]; then raise_error "'modules' input is not valid."; fi
           if [ -z "$conf" ]; then raise_error "Specify 'configuration' input."; fi
+
           mods+=("$mod")
           confs+=("$conf")
         done
@@ -101,26 +103,22 @@ runs:
           raise_error "Incorrect checksum for dependency-tree-diff.jar."
         fi
 
-        gh repo clone "$REPOSITORY" sources > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
-        cd "$WORK_DIR/sources"
-
-        # enable fetch
+        gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
         # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
-        GITHUB_AUTH="$(echo -n "x-access-token:$GH_TOKEN" | base64)"
-        git config http.https://github.com/.extraheader "AUTHORIZATION: basic $GITHUB_AUTH"
+        cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
 
         if [[ "$EVENT_NAME" == 'push' ]]; then
-          after_sha="$SHA"
-          before_sha="$(git rev-parse "${after_sha}~1")"
+          head_sha="$SHA"
+          base_sha="$(git rev-parse "${head_sha}~1")"
         elif [[ "$COMPARE_WITH_BASE" == 'false' ]]; then
           last_commit="$(gh pr view "$PR_NUMBER" --json commits --jq '.commits|reverse|.[0].oid')" > /dev/null 2>&1 || raise_error "May not have 'pull-requests: read' permission."
-          after_sha="$last_commit"
+          head_sha="$last_commit"
           first_commit="$(gh pr view "$PR_NUMBER" --json commits --jq '.commits|.[0].oid')"
-          before_sha="$(git rev-parse "${first_commit}~1")"
+          base_sha="$(git rev-parse "${first_commit}~1")"
         else
           git fetch -q origin "$MERGE_REF:merge"
-          after_sha="$(git rev-parse merge)"
-          before_sha="$(git rev-parse "${after_sha}~1")"
+          head_sha="$(git rev-parse merge)"
+          base_sha="$(git rev-parse "${head_sha}~1")"
         fi
 
         # do not create a file with the input string
@@ -128,13 +126,13 @@ runs:
           echo -n "$WORK_DIR/deps/$(echo -n "${1}-${2}-${3}" | openssl sha1 | awk '{print $2}').txt"
         }
 
-        git checkout -q "$before_sha"
+        git checkout -q "$base_sha"
         eval "$SCRIPT"
         cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
 
         for i in "${!mods[@]}" ; do
           # on windows, files containing CR cause an error in diff tools
-          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$before_sha")"
+          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")"
         done
 
         cd "$WORK_DIR/sources"
@@ -143,12 +141,12 @@ runs:
         git clean -df -q
         git checkout -q .
 
-        git checkout -q "$after_sha"
+        git checkout -q "$head_sha"
         eval "$SCRIPT"
         cd "$WORK_DIR/sources/$PROJECT_DIR" # directory may have changed in the script
 
         for i in "${!mods[@]}" ; do
-          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$after_sha")"
+          ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")"
         done
 
         exists=false
@@ -156,12 +154,12 @@ runs:
         {
           echo "### $REPORT_TITLE"
           echo ''
-          echo "- head: [${after_sha:0:8}](https://github.com/${REPOSITORY}/commit/${after_sha})"
-          echo "- base: [${before_sha:0:8}](https://github.com/${REPOSITORY}/commit/${before_sha})"
+          echo "- head: [${head_sha:0:8}](https://github.com/${GH_REPO}/commit/${head_sha})"
+          echo "- base: [${base_sha:0:8}](https://github.com/${GH_REPO}/commit/${base_sha})"
 
           for i in "${!mods[@]}" ; do
             result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" \
-              "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$before_sha")" "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$after_sha")")"
+              "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")" "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")")"
 
             echo ''
 
@@ -175,7 +173,7 @@ runs:
               echo '```'
 
               result_detail="$(java -jar "$WORK_DIR/tools/dependency-tree-diff.jar" \
-                "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$before_sha")" "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$after_sha")")"
+                "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$base_sha")" "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$head_sha")")"
 
               echo ''
               echo '<details>'
