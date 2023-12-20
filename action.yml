@@ -145,18 +145,18 @@ runs:
         {
           echo "### $REPORT_TITLE"
           echo ''
-          echo "- commit SHA before change: [${before_sha}](https://github.com/${REPOSITORY}/commit/${before_sha})"
-          echo "- commit SHA after change: [${after_sha}](https://github.com/${REPOSITORY}/commit/${after_sha})"
+          echo "- head: [${after_sha:0:8}](https://github.com/${REPOSITORY}/commit/${after_sha})"
+          echo "- base: [${before_sha:0:8}](https://github.com/${REPOSITORY}/commit/${before_sha})"
 
           for i in "${!modules[@]}" ; do
             result="$(java -jar "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" "$WORK_DIR/deps/${modules[$i]}-before-deps.txt" "$WORK_DIR/deps/${modules[$i]}-after-deps.txt")"
 
             echo ''
 
-            if [[ -n "$result" ]]; then
+            if [ -n "$result" ]; then
               exists=true
 
-              echo ":orange_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ":yellow_square: \`${modules[$i]}\` module (\`${configurations[$i]}\` configuration)"
               echo ''
               echo '```'
               echo "$result"
@@ -173,12 +173,15 @@ runs:
               echo '```'
               echo '</details>'
             else
-              echo ":green_square: \`${modules[$i]}\` module ( \`${configurations[$i]}\` configuration )"
+              echo ":green_square: \`${modules[$i]}\` module (\`${configurations[$i]}\` configuration)"
               echo ''
+              echo '```'
               echo 'No differences in dependencies, when this module is the base point.'
+              echo '```'
             fi
           done
         } >> "$GITHUB_STEP_SUMMARY"
 
         echo "exists-diff=$exists" >> "$GITHUB_OUTPUT"
+
         rm -fr "$WORK_DIR/tools"; rm -fr "$WORK_DIR/deps"; rm -fr "$WORK_DIR/sources"
