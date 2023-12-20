@@ -22,12 +22,8 @@ inputs:
     description: 'Report title in job summary.'
     required: false
     default: 'Report from Gradle Dependency Diff Report action'
-  compare-with-base:
-    description: 'Whether to compare with the base branch.'
-    required: false
-    default: 'true'
-  sha:
-    description: ''
+  head-ref:
+    description: 'Target commit reference.'
     required: false
     default: ${{ github.sha }}
   repository: # opned for .github/workflows/ci.yml
@@ -50,11 +46,8 @@ runs:
         PROJECT_DIR: ${{ inputs.project-dir }}
         SCRIPT: ${{ inputs.script }}
         REPORT_TITLE: ${{ inputs.report-title }}
-        COMPARE_WITH_BASE: ${{ inputs.compare-with-base }}
-        SHA: ${{ inputs.sha }}
-        MERGE_REF: ${{ github.ref }}
-        EVENT_NAME: ${{ github.event_name }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_REF: ${{ inputs.head-ref }}
+        IS_VALID_EVENT: ${{ contains(fromJSON('["pull_request","pull_request_target","merge_group"]'), github.event_name) }}
         GH_REPO: ${{ inputs.repository }} # for GitHub CLI
         GH_TOKEN: ${{ github.token }} # for GitHub CLI
       run: |
@@ -67,7 +60,7 @@ runs:
         mkdir "$WORK_DIR/tools"
         mkdir "$WORK_DIR/deps"
 
-        if [[ "$EVENT_NAME" != 'pull_request' && "$EVENT_NAME" != 'push' ]]; then raise_error "This action must be triggered by a 'pull_request' or 'push' event."; fi
+        if [ "$IS_VALID_EVENT" != 'true' ]; then raise_error "This action supports 'pull_request', 'pull_request_target' and 'merge_group' events."; fi
 
         modules="$(echo "$MODULES" | xargs)"
         configuration="$(echo "$CONFIGURATION" | xargs)"
@@ -103,23 +96,13 @@ runs:
           raise_error "Incorrect checksum for dependency-tree-diff.jar."
         fi
 
-        gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
+        gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --depth 1 --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
         # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
         cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
 
-        if [[ "$EVENT_NAME" == 'push' ]]; then
-          head_sha="$SHA"
-          base_sha="$(git rev-parse "${head_sha}~1")"
-        elif [[ "$COMPARE_WITH_BASE" == 'false' ]]; then
-          last_commit="$(gh pr view "$PR_NUMBER" --json commits --jq '.commits|reverse|.[0].oid')" > /dev/null 2>&1 || raise_error "May not have 'pull-requests: read' permission."
-          head_sha="$last_commit"
-          first_commit="$(gh pr view "$PR_NUMBER" --json commits --jq '.commits|.[0].oid')"
-          base_sha="$(git rev-parse "${first_commit}~1")"
-        else
-          git fetch -q origin "$MERGE_REF:merge"
-          head_sha="$(git rev-parse merge)"
-          base_sha="$(git rev-parse "${head_sha}~1")"
-        fi
+        git fetch -q --depth 2 origin "$HEAD_REF" > /dev/null 2>&1 || raise_error "'head-ref' input is not valid."
+        head_sha="$(git rev-parse FETCH_HEAD)"
+        base_sha="$(git rev-parse FETCH_HEAD~1)"
 
         # do not create a file with the input string
         function create_file_name() {
