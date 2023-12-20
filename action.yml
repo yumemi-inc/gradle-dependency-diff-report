@@ -73,6 +73,9 @@ runs:
 
         readonly WORK_DIR="$GITHUB_ACTION_PATH"
 
+        mkdir "$WORK_DIR/tools"
+        mkdir "$WORK_DIR/deps"
+
         if [ -z "$MODULES" ]; then raise_error "Specify 'modules' input."; fi
 
         mods=()
@@ -92,32 +95,23 @@ runs:
           confs+=($conf)
         done
 
-        # reuse in the same job
-        if [ ! -d "$WORK_DIR/tools" ]; then
-          mkdir "$WORK_DIR/tools"
+        # get dependency-diff-tldr
+        curl -f -L -o "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" 'https://github.com/careem/dependency-diff-tldr/releases/download/v0.0.6/dependency-diff-tldr-r8.jar'
+        if [ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(cat "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | openssl sha1 | awk '{print $2}')" ]; then
+          raise_error "Incorrect checksum for dependency-diff-tldr-r8.jar."
+        fi
 
-          # get dependency-diff-tldr
-          curl -f -L -o "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" 'https://github.com/careem/dependency-diff-tldr/releases/download/v0.0.6/dependency-diff-tldr-r8.jar'
-          if [ 'b76af4e71fe1bc3362207d648542337c21ab91e8' != "$(cat "$WORK_DIR/tools/dependency-diff-tldr-r8.jar" | openssl sha1 | awk '{print $2}')" ]; then
-            raise_error "Incorrect checksum for dependency-diff-tldr-r8.jar."
-          fi
-
-          # get Dependency Tree Diff
-          curl -f -L -o "$WORK_DIR/tools/dependency-tree-diff.jar" 'https://github.com/JakeWharton/dependency-tree-diff/releases/download/1.2.0/dependency-tree-diff.jar'
-          if [ '949394274f37c06ac695b5d49860513e4d16e847' != "$(cat "$WORK_DIR/tools/dependency-tree-diff.jar" | openssl sha1 | awk '{print $2}')" ]; then
-            raise_error "Incorrect checksum for dependency-tree-diff.jar."
-          fi
+        # get Dependency Tree Diff
+        curl -f -L -o "$WORK_DIR/tools/dependency-tree-diff.jar" 'https://github.com/JakeWharton/dependency-tree-diff/releases/download/1.2.0/dependency-tree-diff.jar'
+        if [ '949394274f37c06ac695b5d49860513e4d16e847' != "$(cat "$WORK_DIR/tools/dependency-tree-diff.jar" | openssl sha1 | awk '{print $2}')" ]; then
+          raise_error "Incorrect checksum for dependency-tree-diff.jar."
         fi
 
         if [[ -z "$HEAD_REF" || -z "$BASE_REF" ]]; then raise_error "Specify 'head-ref' and 'base-ref' inputs."; fi
 
-        if [ ! -d "$WORK_DIR/sources" ]; then
-          gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --depth 1 --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
-          # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
-          cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
-        else
-          cd "$WORK_DIR/sources"
-        fi
+        gh repo clone "$GH_REPO" "$WORK_DIR/sources" -- --depth 1 --no-checkout > /dev/null 2>&1 || raise_error "May not have 'contents: read' permission."
+        # ref: https://github.com/actions/checkout/blob/72f2cec99f417b1a1c5e2e88945068983b7965f9/src/git-auth-helper.ts#L55-L63
+        cd "$WORK_DIR/sources" && git config --local 'http.https://github.com/.extraheader' "AUTHORIZATION: basic $(echo -n "x-access-token:$GH_TOKEN"|base64)"
 
         git fetch -q --depth 1 origin "$HEAD_REF" > /dev/null 2>&1 || raise_error "'head-ref' input is not valid."
         head_sha="$(git rev-parse FETCH_HEAD)"
@@ -130,8 +124,6 @@ runs:
           git fetch -q --depth 1 origin "$merge_base_sha"
           base_sha="$(git rev-parse FETCH_HEAD)"
         fi
-
-        if [ ! -d "$WORK_DIR/deps" ]; then mkdir "$WORK_DIR/deps"; fi
 
         function create_file_name() {
           # do not create a file with the input string
