@@ -39,6 +39,8 @@ jobs:
           configuration: 'releaseRuntimeClasspath'
           repository: 'android/sunflower'
           head-ref: '8d000f6c72bc5384b4ca9f7452d620085919519d'
+          script: |
+            echo "$sha"
       - name: Show result
         if: always()
         shell: bash # for windlows
