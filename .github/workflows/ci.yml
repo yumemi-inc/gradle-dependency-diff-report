@@ -13,7 +13,8 @@ jobs:
     name: Use this action for check
     strategy:
       matrix:
-        runner: [ubuntu-latest, macos-latest, windows-latest]
+#        runner: [ubuntu-latest, macos-latest, windows-latest]
+        runner: [ubuntu-latest]
       fail-fast: false
     permissions:
       contents: read # for checkout, and this action requires
@@ -40,7 +41,13 @@ jobs:
           repository: 'android/sunflower'
           head-ref: '8d000f6c72bc5384b4ca9f7452d620085919519d'
           script: |
-            echo "$sha"
+            #echo "$sha"
+
+            gh repo clone 'android/sunflower' ci -- --depth 1
+            cd ci && ls
+
+            exit 0
+
       - name: Show result
         if: always()
         shell: bash # for windlows
