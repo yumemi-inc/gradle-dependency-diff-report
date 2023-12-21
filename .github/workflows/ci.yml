@@ -40,18 +40,12 @@ jobs:
           configuration: 'releaseRuntimeClasspath'
           repository: 'android/sunflower'
           head-ref: '8d000f6c72bc5384b4ca9f7452d620085919519d'
+          project-dir: 'ci'
           script: |
-            #echo "$sha"
-
             gh repo clone android/sunflower ci -- --depth 1 --no-checkout
             cd ci
-            git fetch --depth 1 origin 8d000f6c72bc5384b4ca9f7452d620085919519d
-            git checkout FETCH_HEAD
-
-            ls
-
-            exit 0
-
+            git fetch -q --depth 1 origin 8d000f6c72bc5384b4ca9f7452d620085919519d
+            git checkout -q FETCH_HEAD
       - name: Show result
         if: always()
         shell: bash # for windlows
