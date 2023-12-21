@@ -26,10 +26,6 @@ inputs:
     description: 'Target commit reference.'
     required: false
     default: ${{ github.sha }}
-  repository: # opned for .github/workflows/ci.yml
-    description: 'Target repository.'
-    required: false
-    default: ${{ github.repository }}
 outputs:
   exists-diff:
     description: 'Whether there are any differences in dependencies.'
@@ -48,7 +44,7 @@ runs:
         REPORT_TITLE: ${{ inputs.report-title }}
         HEAD_REF: ${{ inputs.head-ref }}
         IS_VALID_EVENT: ${{ contains(fromJSON('["pull_request","pull_request_target","merge_group"]'), github.event_name) }}
-        GH_REPO: ${{ inputs.repository }} # for GitHub CLI
+        GH_REPO: ${{ github.repository }} # for GitHub CLI
         GH_TOKEN: ${{ github.token }} # for GitHub CLI
       run: |
         echo "::debug::git version: $(git --version)"

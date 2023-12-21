@@ -37,8 +37,21 @@ jobs:
         with:
           modules: 'app'
           configuration: 'releaseRuntimeClasspath'
-          repository: 'android/sunflower'
-          head-ref: '8d000f6c72bc5384b4ca9f7452d620085919519d'
+          project-dir: 'tmp'
+          script: |
+            # use public Android project
+            if [ -z "$(ls "$WORK_DIR/deps")" ]; then
+              sha='8d000f6c72bc5384b4ca9f7452d620085919519d'
+              head_sha="$sha"
+            else
+              sha='13144ae9b1cb7a725dc846179cd8498058bafad2'
+              base_sha="$sha"
+            fi
+            GH_REPO='android/sunflower'
+            gh repo clone "$GH_REPO" tmp -- --depth 1 --no-checkout
+            cd tmp
+            git fetch -q --depth 1 origin "$sha"
+            git checkout -q FETCH_HEAD
       - name: Show result
         if: always()
         shell: bash # for windlows
