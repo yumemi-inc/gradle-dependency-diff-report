@@ -40,17 +40,17 @@ jobs:
           configuration: 'releaseRuntimeClasspath'
           repository: 'android/sunflower'
           head-ref: '8d000f6c72bc5384b4ca9f7452d620085919519d'
-          project-dir: 'ci'
+          project-dir: 'tmp'
           script: |
-            if [ -n "$(ls "$WORK_DIR/deps")" ]; then
-              echo 'aaa'
+            # use public Android project
+            if [ -z "$(ls "$WORK_DIR/deps")" ]; then
+              sha='8d000f6c72bc5384b4ca9f7452d620085919519d'
             else
-              echo 'bbbb'
+              sha='13144ae9b1cb7a725dc846179cd8498058bafad2'
             fi
-
-            gh repo clone android/sunflower ci -- --depth 1 --no-checkout
-            cd ci
-            git fetch -q --depth 1 origin 8d000f6c72bc5384b4ca9f7452d620085919519d
+            gh repo clone android/sunflower tmp -- --depth 1 --no-checkout
+            cd tmp
+            git fetch -q --depth 1 origin "$sha"
             git checkout -q FETCH_HEAD
       - name: Show result
         if: always()
