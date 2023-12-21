@@ -120,7 +120,7 @@ runs:
             # on windows, files containing CR cause an error in diff tools
             ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$sha")"
           done
-          cd ..; git clean -df -q; git checkout -q . # cleanup
+          cd "$WORK_DIR/sources"; git clean -dff -q; git checkout -q . # cleanup
         done
 
         exists=false
