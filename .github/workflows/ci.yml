@@ -43,8 +43,12 @@ jobs:
           script: |
             #echo "$sha"
 
-            gh repo clone 'android/sunflower' ci -- --depth 1
-            cd ci && ls
+            gh repo clone android/sunflower ci -- --depth 1 --no-checkout
+            cd ci
+            git fetch -depth 1 origin 8d000f6c72bc5384b4ca9f7452d620085919519d
+            git checkout FETCH_HEAD
+
+            ls
 
             exit 0
 
