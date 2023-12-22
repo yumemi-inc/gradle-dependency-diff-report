@@ -3,9 +3,27 @@
 # Gradle Dependency Diff Report
 
 A GitHub Action that reports Gradle dependency differences.
-The report is displayed in the pull request job summary, like [this](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/runs/6220601823).
+The report is displayed in job summaries.
 
-At a minimum, you can simply implement a workflow as follows:
+| ![image](doc/report.png) | 
+|:--:| 
+| [report sample](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/runs/7295539669) |
+
+Reports are created with Gradle `dependencies` task, [dependency-diff-tldr](https://github.com/careem/dependency-diff-tldr), and [Dependency Tree Diff](https://github.com/JakeWharton/dependency-tree-diff).
+
+## Usage
+
+See [action.yml](action.yml) for available action inputs and outputs.
+Note that this action requires `contents: read` permission.
+
+### Supported workflow trigger events
+
+Works on any event.
+Basically it works as is, but if you want to customize it, refer to the [Specify comparison targets](#specify-comparison-targets) section.
+
+### Basic
+
+At a minimum, just prepare a workflow as follows:
 
 ```yaml
 name: Dependency Diff Report
@@ -18,41 +36,40 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: yumemi-inc/gradle-dependency-diff-report@v1
+      - uses: yumemi-inc/gradle-dependency-diff-report@v2
         with:
           modules: 'app'
           configuration: 'releaseRuntimeClasspath'
 ```
 
-Reports are created with Gradle `dependencies` task, [dependency-diff-tldr](https://github.com/careem/dependency-diff-tldr), and [Dependency Tree Diff](https://github.com/JakeWharton/dependency-tree-diff).
-
-## Usage
-
-See [action.yml](action.yml) for available action inputs and outputs.
-Note that this action requires `contents: read` permission.
-
-### Specifying multiple modules
+### Specify multiple modules
 
 If you specify only the root module of the application, the modules that root depends on will also be reported.
-But if there is no root module or if you need to report on individual modules, specify them separated by spaces.
+But if there is no root module or if you need to report on individual modules, specify them separated by spaces or line breaks.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
-    modules: 'app feature:main feature:login domain'
+    modules: |
+     app
+     feature:main feature:login
+     domain
     configuration: 'releaseRuntimeClasspath'
 ```
 
 At this time, if you want to apply a different configuration, specify it separated by `|`.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
-    modules: 'app|productReleaseRuntimeClasspath feature:main feature:login domain|debugRuntimeClasspath'
+    modules: |
+      app|productionReleaseRuntimeClasspath
+      feature:main feature:login
+      domain|debugRuntimeClasspath
     configuration: 'releaseRuntimeClasspath'
 ```
 
-### Specifying the Java version
+### Specify Java version
 
 If not specified, the default version of the runner will be applied.
 For `ubuntu-22.04` it is `11`.
@@ -63,42 +80,35 @@ If you want to use a different version, specify it using [actions/setup-java](ht
   with:
     distribution: 'zulu'
     java-version: 17
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
 ```
-### Don't consider base branch
 
-By default, the latest code in the base branch of a pull request is considered.
-To report dependency differences only in pull requests without considering the base branch, set `compare-with-base` input to `false`.
-
-```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
-  with:
-    modules: 'app'
-    configuration: 'releaseRuntimeClasspath'
-    compare-with-base: false
-```
-Note that `pull-requests: read` permission is required in this case.
-
-### Specifying the application root directory
+### Specify application root directory
 
 If the repository root directory and application root directory do not match, specify it with `project-dir` input.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
-    project-dir: 'my-app'
+    project-dir: 'myApp'
 ```
+
+### Specify comparison targets
+
+Gradle application project code between `head-ref` input and `base-ref` input references is compared.
+The behavior is the same as [yumemi-inc/path-filter](https://github.com/yumemi-inc/path-filter#specify-comparison-targets), so refer to it for details.
 
 ## Tips
 
 ### Report only when library changes
 
-To prevent unnecessary workflow runs, run only when the file that contains the library version is changed.
+To prevent unnecessary workflow runs, you can use [GitHub's path filter](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore).
+Specify file paths containing library versions to `paths:`.
 
 ```yaml
 on:
@@ -108,30 +118,48 @@ on:
       - '**/libs.versions.toml'
 ```
 
-### Using this action's output
-
-Use the `exists-diff` output of this action to notify the pull request with a comment if there are any differences in dependencies.
+If you want to control at step or job level, you can use [yumemi-inc/path-filter](https://github.com/yumemi-inc/path-filter#specify-comparison-targets) (or [yumemi-inc/changed-files](https://github.com/yumemi-inc/changed-files)).
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/path-filter@v2
+  id: filter
+  with:
+    patterns: |
+      **/*.gradle*
+      **/libs.versions.toml
+- if: steps.filter.outputs.exists == 'true' # or fromJSON(steps.filter.outputs.exists)
+  uses: yumemi-inc/gradle-dependency-diff-report@v2
+  with:
+    modules: 'app'
+    configuration: 'releaseRuntimeClasspath'
+```
+
+### Use this action's output
+
+This is an example of using `exists-diff` output to notify a pull request with a comment if there are any differences in dependencies.
+
+```yaml
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   id: report
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
-- if: steps.report.outputs.exists-diff == 'true'
-  uses: yumemi-inc/comment-pull-request@v1 # Note: requires 'pull-requests: write' permission
+- if: steps.report.outputs.exists-diff == 'true' # or fromJSON(steps.report.outputs.exists-diff)
+  uses: yumemi-inc/comment-pull-request@v1
   with:
     comment: |
       :warning: There are differences in dependencies. See details [here](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 ```
 
-### Using Gradle cache
+Note that [yumemi-inc/comment-pull-request](https://github.com/yumemi-inc/comment-pull-request) requires `pull-requests: write` permission.
+
+### Use Gradle cache
 
 This action uses Gradle `dependencies` task, so you can expect faster processing by using Gradle cache.
 
 ```yaml
 - uses: gradle/gradle-build-action@v2
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -139,21 +167,6 @@ This action uses Gradle `dependencies` task, so you can expect faster processing
 
 > [!NOTE]  
 > Since [gradle/gradle-build-action](https://github.com/gradle/gradle-build-action#using-the-cache-read-only) does not generate a cache in the HEAD branch of a pull request, in order to use the cache in a pull request, you must first generate a cache in the default branch with another workflow or something.
-
-### Triggered by push event
-
-This action can be triggered not only by `pull_request` events but also by `push` events.
-In this case, the difference from the previous commit.
-
-```yaml
-on:
-  push:
-    branches:
-      - 'main'
-    paths:
-      - '**/*.gradle*'
-      - '**/libs.versions.toml'
-```
 
 ### Process multiple modules in parallel
 
@@ -171,7 +184,7 @@ jobs:
     outputs:
       exists-diff: ${{ steps.report.outputs.exists-diff }}
     steps:
-      - uses: yumemi-inc/gradle-dependency-diff-report@v1
+      - uses: yumemi-inc/gradle-dependency-diff-report@v2
         id: report
         with:
           modules: 'app domain'
@@ -183,7 +196,7 @@ jobs:
     outputs:
       exists-diff: ${{ steps.report.outputs.exists-diff }}
     steps:
-      - uses: yumemi-inc/gradle-dependency-diff-report@v1
+      - uses: yumemi-inc/gradle-dependency-diff-report@v2
         id: report
         with:
           modules: 'feature:main feature:login'
@@ -202,24 +215,24 @@ jobs:
 
 ### Pass environment variables
 
-If you want to pass some environment variables when running your application's `dependencies` task, specify them with `env`.
+If you want to pass some environment variables for `dependencies` task, specify them with `env:`.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
-  with:
-    modules: 'app'
-    configuration: 'releaseRuntimeClasspath'
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   env:
     YOUR_ENV_1: ...
     YOUR_ENV_2: ...
+  with:
+    modules: 'app'
+    configuration: 'releaseRuntimeClasspath'
 ```
 
 ### Run bash script
 
-If you want to do some processing before your application's `dependencies` task, specify it with `script` input.
+If you want to do some processing before `dependencies` task, specify it with `script` input.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -231,7 +244,7 @@ If you want to do some processing before your application's `dependencies` task,
 At this time, environment variables and `${{ }}` expressions can be used.
 
 ```yaml
-- uses: yumemi-inc/gradle-dependency-diff-report@v1
+- uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
     configuration: 'releaseRuntimeClasspath'
@@ -243,7 +256,7 @@ At this time, environment variables and `${{ }}` expressions can be used.
 ## Examples
 
 <details>
-<summary>A workflow I often create</summary>
+<summary>The entire workflow I often create</summary>
 
 ```yaml
 name: Dependency Diff Report
@@ -274,11 +287,11 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
       - name: Report
-        uses: yumemi-inc/gradle-dependency-diff-report@v1
+        uses: yumemi-inc/gradle-dependency-diff-report@v2
         id: report
         with:
           modules: 'app'
-          configuration: 'ProductionReleaseRuntimeClasspath'
+          configuration: 'productionReleaseRuntimeClasspath'
       - name: Comment
         if: steps.report.outputs.exists-diff == 'true' || failure()
         uses: yumemi-inc/comment-pull-request@v1
@@ -287,9 +300,3 @@ jobs:
           comment-if-failure: ':exclamation: Report workflow failed. See details [here](${{ env.LOG_URL }}).'
 ```
 </details>
-
-## Other topics
-
-### Slides related to this action
-
-- (Japanese) [CI でライブラリのバージョンの変化をレポートする](https://speakerdeck.com/hkusu/ci-teraihurarinohasiyonnobian-hua-worehotosuru)
