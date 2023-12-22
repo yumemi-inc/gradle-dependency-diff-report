@@ -6,7 +6,7 @@ branding:
   color: 'blue'
 inputs:
   modules:
-    description: 'Target Gradle modules separated by spaces.'
+    description: 'Target Gradle modules separated by spaces or line breaks.'
     required: true
   configuration:
     description: 'Configuration of Gradle dependencies task.'
