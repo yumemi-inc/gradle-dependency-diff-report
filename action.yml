@@ -60,7 +60,6 @@ runs:
         HEAD_REF: ${{ inputs.head-ref }}
         BASE_REF: ${{ inputs.base-ref }}
         USE_MERGE_BASE: ${{ inputs.use-merge-base }}
-        IS_VALID_EVENT: ${{ contains(fromJSON('["pull_request","pull_request_target","merge_group"]'), github.event_name) }}
         GH_REPO: ${{ github.repository }} # for GitHub CLI
         GH_TOKEN: ${{ github.token }} # for GitHub CLI
       run: |
