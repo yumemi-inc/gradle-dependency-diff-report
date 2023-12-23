@@ -227,6 +227,8 @@ If you want to pass some environment variables for `dependencies` task, specify 
     configuration: 'releaseRuntimeClasspath'
 ```
 
+Also, if you need additional Gradle options, specify them with `gradle-option` input.
+
 ### Run bash script
 
 If you want to do some processing before `dependencies` task, specify it with `script` input.

@@ -18,6 +18,9 @@ inputs:
   script:
     description: 'Bash script to run before Gradle dependencies task.'
     required: false
+  gradle-option:
+    description: 'Additional Gradle options when running Gradle dependencies task.'
+    required: false
   report-title:
     description: 'Report title in job summary.'
     required: false
@@ -56,6 +59,7 @@ runs:
         CONFIGURATION: ${{ inputs.configuration }}
         PROJECT_DIR: ${{ inputs.project-dir }}
         SCRIPT: ${{ inputs.script }}
+        GRADLE_OPTION: ${{ inputs.gradle-option }}
         REPORT_TITLE: ${{ inputs.report-title }}
         HEAD_REF: ${{ inputs.head-ref }}
         BASE_REF: ${{ inputs.base-ref }}
@@ -137,7 +141,7 @@ runs:
           cd "$WORK_DIR/sources/$PROJECT_DIR"
           for i in "${!mods[@]}" ; do
             # on windows, files containing CR cause an error in diff tools
-            ./gradlew -q ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$sha")"
+            ./gradlew -q $GRADLE_OPTION ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$sha")"
           done
           # cleanup
           cd "$WORK_DIR/sources"
