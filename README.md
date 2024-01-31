@@ -158,7 +158,7 @@ Note that [yumemi-inc/comment-pull-request](https://github.com/yumemi-inc/commen
 This action uses Gradle `dependencies` task, so you can expect faster processing by using Gradle cache.
 
 ```yaml
-- uses: gradle/gradle-build-action@v2
+- uses: gradle/gradle-build-action@v3
 - uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
