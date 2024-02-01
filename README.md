@@ -76,7 +76,7 @@ For `ubuntu-22.04` it is `11`.
 If you want to use a different version, specify it using [actions/setup-java](https://github.com/actions/setup-java).
 
 ```yaml
-- uses: actions/setup-java@v3
+- uses: actions/setup-java@v4
   with:
     distribution: 'zulu'
     java-version: 17
@@ -158,7 +158,7 @@ Note that [yumemi-inc/comment-pull-request](https://github.com/yumemi-inc/commen
 This action uses Gradle `dependencies` task, so you can expect faster processing by using Gradle cache.
 
 ```yaml
-- uses: gradle/gradle-build-action@v2
+- uses: gradle/gradle-build-action@v3
 - uses: yumemi-inc/gradle-dependency-diff-report@v2
   with:
     modules: 'app'
@@ -284,7 +284,7 @@ jobs:
       LOG_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
