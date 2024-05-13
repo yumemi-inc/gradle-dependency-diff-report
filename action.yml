@@ -141,7 +141,7 @@ runs:
           cd "$WORK_DIR/sources/$PROJECT_DIR"
           for i in "${!mods[@]}" ; do
             # on windows, files containing CR cause an error in diff tools
-            ./gradlew -q $GRADLE_OPTION ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$sha")"
+            ./gradlew -q $GRADLE_OPTION ":${mods[$i]}:dependencies" --configuration "${confs[$i]}" --console=plain | tr -d '\r' > "$(create_file_name ":${mods[$i]}" "${confs[$i]}" "$sha")"
           done
           # cleanup
           cd "$WORK_DIR/sources"
