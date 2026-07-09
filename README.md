@@ -1,13 +1,5 @@
 [![CI](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/workflows/ci.yml/badge.svg)](https://github.com/yumemi-inc/gradle-dependency-diff-report/actions/workflows/ci.yml)
 
-> [!IMPORTANT]
-> Currently, GitHub is unstable. As a result, this action may encounter errors. Therefore, please specify the following options in your pull request workflow:
-> ```
-> with:
->   head-ref: refs/pull/${{ github.event.number }}/head
->   use-merge-base: true
-> ```
-
 # Gradle Dependency Diff Report
 
 A GitHub Action that reports Gradle dependency differences.
